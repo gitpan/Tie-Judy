@@ -1,5 +1,9 @@
 Revision history for Perl extension Tie::Judy.
 
+0.02  Mon Oct 24
+	- fleshed out object-oriented interface
+	- fixed bug on 64 bit systems
+
 0.01  Mon Oct 17 08:58:16 2005
 	- original version; created by h2xs 1.23 with options
 		-An Tie::Judy Judy-1.0.1/src/Judy1/Judy1.h Judy-1.0.1/src/JudyCommon/JudyPrivate1L.h Judy-1.0.1/src/JudyCommon/JudyPrivateBranch.h Judy-1.0.1/src/JudyCommon/JudyPrivate.h Judy-1.0.1/src/JudyHS/JudyHS.h Judy-1.0.1/src/JudyL/JudyL.h

@@ -33,18 +33,44 @@ init_buf(judySL * this, const char * key)
   return;
 }
 
+void
+dec_values(judySL * this) {
+  Word_t * pvalue;
+
+  init_buf(this, "");
+
+  JSLF(pvalue, this->judy, this->buf);
+  while (pvalue != NULL) {
+    SvREFCNT_dec((SV *)*pvalue);
+    JSLN(pvalue, this->judy, this->buf);
+  }
+
+  return;
+}
+
 MODULE = Tie::Judy		PACKAGE = Tie::Judy		
 
 judySL *
-judy_new_JudySL()
+judy_new_judySL()
 	CODE:
 		judySL * this    = malloc(sizeof(judySL));
 		this->judy       = (Pvoid_t) NULL;
 		this->buf_size   = 0;
 		this->buf        = (char *)  NULL;
+		this->num_keys   = 0;
 		RETVAL = this;
 	OUTPUT:
 		RETVAL
+
+void
+judy_free_judySL(this)
+		judySL * this
+	CODE:
+		dec_values(this);
+		free(this->buf);
+		free(this->judy);
+		free(this);
+		XSRETURN_EMPTY;
 
 SV *
 judy_JSLG(this, key)
@@ -84,7 +110,7 @@ judy_JSLI(this, key, value)
 		  this->num_keys++;
 		}
 
-		*pvalue = (int)value;
+		*pvalue = (Word_t)value;
 
 		XSRETURN_EMPTY;
 
@@ -119,16 +145,9 @@ void
 judy_JSLFA(this)
 		judySL * this
 	PREINIT:
-		Word_t * pvalue;
 		int      rc;
 	CODE:
-		init_buf(this, "");
-
-		JSLF(pvalue, this->judy, this->buf);
-		while (pvalue != NULL) {
-		  SvREFCNT_dec((SV *)*pvalue);
-		  JSLN(pvalue, this->judy, this->buf);
-		}
+		dec_values(this);
 
 		JSLFA(rc, this->judy);
 
@@ -140,7 +159,6 @@ judy_JSLFA(this)
 		this->buf_size = 0;
 
 		XSRETURN_EMPTY;
-		
 
 char *
 judy_JSLF(this)

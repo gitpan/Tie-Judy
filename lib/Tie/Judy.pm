@@ -4,20 +4,20 @@ use 5.008005;
 use strict;
 use warnings;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 require XSLoader;
 XSLoader::load('Tie::Judy', $VERSION);
 
 sub new {
   my $pkg = shift;
-  $pkg->TIEHASH(@_);
+  return $pkg->TIEHASH(@_);
 }
 
 sub TIEHASH {
   my ($pkg) = @_;
 
-  my $judy = judy_new_JudySL();
+  my $judy = judy_new_judySL();
 
   return bless \$judy, $pkg;
 }
@@ -32,6 +32,15 @@ sub DELETE {
   my $this = shift;
 
   return judy_JSLD($$this, @_);
+}
+
+sub remove {
+  my $this = shift;
+
+  my $judy = $$this;
+  my @values = map judy_JSLD($judy, $_), @_;
+
+  return wantarray ? @values : \@values;
 }
 
 sub STORE {
@@ -70,7 +79,8 @@ sub retrieve {
   my $this = shift;
 
   my $judy = $$this;
-  return map judy_JSLG($judy, $_), @_;
+  my @values = map judy_JSLG($judy, $_), @_;
+  return wantarray ? @values : \@values;
 }
 
 sub FIRSTKEY {
@@ -83,6 +93,41 @@ sub NEXTKEY {
   my $this = shift;
 
   return judy_JSLN($$this);
+}
+
+my %last_key;
+sub keys {
+  my $this = shift;
+
+  if (wantarray) {
+    my $key = $this->FIRSTKEY;
+    my @keys;
+    while (defined $key) {
+      push @keys, $key;
+      $key = $this->NEXTKEY;
+    }
+
+    delete $last_key{$this};
+    return @keys;
+  } elsif (defined $last_key{$this}) {
+    return $last_key{$this} = $this->NEXTKEY;
+  } else {
+    return $last_key{$this} = $this->FIRSTKEY;
+  }
+
+  return;
+}
+
+sub values {
+  my $this = shift;
+
+  if (wantarray) {
+    return map judy_JSLG($$this, $_), $this->keys;
+  } elsif (defined $last_key{$this}) {
+    return judy_JSLG($$this, $last_key{$this} = $this->NEXTKEY);
+  } else {
+    return judy_JSLG($$this, $last_key{$this} = $this->FIRSTKEY);
+  }
 }
 
 sub CLEAR {
@@ -99,6 +144,8 @@ sub SCALAR {
   return judy_count($$this);
 }
 
+*count = *SCALAR;
+
 sub DESTROY { }
 
 package judySLPtr;
@@ -107,6 +154,7 @@ sub DESTROY {
   my $this = shift;
 
   Tie::Judy::judy_JSLFA($this);
+  Tie::Judy::judy_free_judySL($this);
 
   return;
 }
@@ -124,16 +172,37 @@ Tie::Judy - Perl extension for using a Judy array instead of a hash.
 
   tie %judy, 'Tie::Judy'; # %judy now reads and writes to a Judy array.
 
-  keys %judy; # the keys here are in bit-wise SORTED order.
+  keys   %judy; # the keys here are in bit-wise SORTED order.
+  values %judy; # the values here are in the same order as the keys
 
   0 + %judy; # returns the number of keys
 
   # method to add lots of entries at once
   (tied %judy)->insert( { key => 'value', ... } );
-  (tied %judy)->insert( key => 'value', ... );
+  (tied %judy)->insert(   key => 'value', ...   );
 
   # method to retrieve lots of values at once
-  (tied %judy)->retrieve( key1, key2, ... )
+  (tied %judy)->retrieve( 'key1', 'key2', ... );
+
+  # method to remove lots of entries at once
+  (tied %judy)->remove( 'key1', 'key2', ... );
+
+  # OBJECT-ORIENTED INTERFACE
+  my $judy = Tie::Judy->new();
+
+  @keys   = $judy->keys;
+  @values = $judy->values;
+
+  $count  = $judy->count;
+
+  $judy->insert(   key => 'value', ...   );
+  $judy->insert( { key => 'value', ... } );
+
+  # retrieve and remove return arrays in list context, array refs in scalar context
+
+  $judy->retrieve( 'key1', 'key2', ... );
+
+  $judy->remove( 'key1', 'key2', ... );
 
 =head1 DESCRIPTION
 
