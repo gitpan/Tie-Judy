@@ -4,7 +4,7 @@ use 5.008005;
 use strict;
 use warnings;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 require XSLoader;
 XSLoader::load('Tie::Judy', $VERSION);
@@ -37,8 +37,7 @@ sub DELETE {
 sub remove {
   my $this = shift;
 
-  my $judy = $$this;
-  my @values = map judy_JSLD($judy, $_), @_;
+  my @values = judy_JSLD_multi($$this, @_);
 
   return wantarray ? @values : \@values;
 }
@@ -57,13 +56,9 @@ sub insert {
     unless (UNIVERSAL::isa($_[0], 'HASH')) {
       Carp::croak "Usage: \$tied->insert(HASHREF) or \$tied->insert(KEY, VALUE, ...)\n";
     }
-    while (my($k, $v) = each %{ $_[0] }) {
-      judy_JSLI($judy, $k, $v);
-    }
+    judy_JSLI_multi($judy, %{ $_[0] });
   } else {
-    for (my $i = 0; $i < $#_; $i+=2) {
-      judy_JSLI($judy, $_[$i], $_[$i + 1]);
-    }
+    judy_JSLI_multi($judy, @_);
   }
 
   return;
@@ -79,7 +74,7 @@ sub retrieve {
   my $this = shift;
 
   my $judy = $$this;
-  my @values = map judy_JSLG($judy, $_), @_;
+  my @values = judy_JSLG_multi($judy, @_);
   return wantarray ? @values : \@values;
 }
 
@@ -99,20 +94,22 @@ my %last_key;
 sub keys {
   my $this = shift;
 
+  my $judy = $$this;
+
   if (wantarray) {
-    my $key = $this->FIRSTKEY;
+    my $key = judy_JSLF($judy);
     my @keys;
     while (defined $key) {
       push @keys, $key;
-      $key = $this->NEXTKEY;
+      $key = judy_JSLN($judy);
     }
 
     delete $last_key{$this};
     return @keys;
   } elsif (defined $last_key{$this}) {
-    return $last_key{$this} = $this->NEXTKEY;
+    return $last_key{$this} = judy_JSLN($judy);
   } else {
-    return $last_key{$this} = $this->FIRSTKEY;
+    return $last_key{$this} = judy_JSLF($judy);
   }
 
   return;
@@ -121,12 +118,14 @@ sub keys {
 sub values {
   my $this = shift;
 
+  my $judy = $$this;
+
   if (wantarray) {
-    return map judy_JSLG($$this, $_), $this->keys;
+    return judy_JSLG_multi($judy, $this->keys);
   } elsif (defined $last_key{$this}) {
-    return judy_JSLG($$this, $last_key{$this} = $this->NEXTKEY);
+    return judy_JSLG($judy, $last_key{$this} = judy_JSLN($judy));
   } else {
-    return judy_JSLG($$this, $last_key{$this} = $this->FIRSTKEY);
+    return judy_JSLG($judy, $last_key{$this} = judy_JSLF($judy));
   }
 }
 
@@ -137,6 +136,8 @@ sub CLEAR {
 
   return;
 }
+
+*clear = *CLEAR;
 
 sub SCALAR {
   my $this = shift;
@@ -203,6 +204,9 @@ Tie::Judy - Perl extension for using a Judy array instead of a hash.
   $judy->retrieve( 'key1', 'key2', ... );
 
   $judy->remove( 'key1', 'key2', ... );
+
+  # remove all entries
+  $judy->clear;
 
 =head1 DESCRIPTION
 

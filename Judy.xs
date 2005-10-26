@@ -91,6 +91,25 @@ judy_JSLG(this, key)
 		RETVAL
 
 void
+judy_JSLG_multi(this, ...)
+		judySL * this
+	PREINIT:
+		Word_t * pvalue;
+		int      i;
+		STRLEN   n_a;
+	PPCODE:
+		for (i = 1; i < items; i++) {
+		  init_buf(this, (char *)SvPV(ST(i), n_a));
+		  JSLG(pvalue, this->judy, this->buf);
+		  if (pvalue == NULL) {
+		    XPUSHs(&PL_sv_undef);
+		  } else {
+		    XPUSHs(sv_2mortal(newSVsv((SV *)*pvalue)));
+		  }
+		}
+		XSRETURN(items - 1);
+
+void
 judy_JSLI(this, key, value)
 		judySL     * this
 		const char * key
@@ -111,6 +130,28 @@ judy_JSLI(this, key, value)
 		}
 
 		*pvalue = (Word_t)value;
+
+		XSRETURN_EMPTY;
+
+void
+judy_JSLI_multi(this, ...)
+		judySL * this
+	PREINIT:
+		Word_t * pvalue;
+		int      i;
+		STRLEN   n_a;
+	CODE:
+		for (i = 1; i < items - 1; i+=2) {
+		  init_buf(this, (char *)SvPV(ST(i), n_a));
+		  JSLI(pvalue, this->judy, this->buf);
+		  if (pvalue != NULL) {
+		    SvREFCNT_inc(ST(i + 1));
+		    if (*pvalue == 0) {
+		      this->num_keys++;
+		    }
+		    *pvalue = (Word_t)ST(i + 1);
+		  }
+		}
 
 		XSRETURN_EMPTY;
 
@@ -140,6 +181,28 @@ judy_JSLD(this, key)
 		}
 	OUTPUT:
 		RETVAL
+
+void
+judy_JSLD_multi(this, ...)
+		judySL * this
+	PREINIT:
+		Word_t * pvalue;
+		int      i, rc;
+		STRLEN   n_a;
+	PPCODE:
+		for (i = 1; i < items; i++) {
+		  init_buf(this, (char *)SvPV(ST(i), n_a));
+		  JSLG(pvalue, this->judy, this->buf);
+		  if (pvalue == NULL) {
+		    XPUSHs(&PL_sv_undef);
+		  } else {
+		    XPUSHs(sv_2mortal(newSVsv((SV *)*pvalue)));
+		    this->num_keys--;
+		  }
+
+		  JSLD(rc, this->judy, this->buf);
+		}
+		XSRETURN(items - 1);
 
 void
 judy_JSLFA(this)

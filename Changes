@@ -1,5 +1,9 @@
 Revision history for Perl extension Tie::Judy.
 
+0.03  Wed Oct 26
+	- added 'clear' synonym to 'CLEAR'
+	- performance enhancements to object-oriented interface
+
 0.02  Mon Oct 24
 	- fleshed out object-oriented interface
 	- fixed bug on 64 bit systems
