@@ -5,7 +5,7 @@
 
 # change 'tests => 1' to 'tests => last_test_to_print';
 
-use Test::More tests => 96;
+use Test::More tests => 108;
 use Tie::Hash;
 use Devel::Peek;
 use Time::HiRes;
@@ -206,6 +206,34 @@ is_deeply [$obj->retrieve(qw(a b c))], [qw(4 5 6)];
 # check multiple remove
 $tied->remove(qw(a b c));
 $obj->remove(qw(a b c));
+
+is(%judy, 0);
+is $obj->count, 0;
+
+# check multiple arg insert; hashref and array ref
+$tied->insert( a => 1, { b => 2 }, [ c => 3 ] );
+$obj->insert ( a => 1, { b => 2 }, [ c => 3 ] );
+
+is_deeply([keys   %judy], [qw(a b c)]);
+is_deeply [$obj->keys  ], [qw(a b c)];
+
+is_deeply([values %judy], [qw(1 2 3)]);
+is_deeply [$obj->values], [qw(1 2 3)];
+
+is(%judy, 3);
+is $obj->count, 3;
+
+is_deeply([$tied->retrieve(qw(a b c))], [qw(1 2 3)]);
+is_deeply [$obj->retrieve( qw(a b c))], [qw(1 2 3)];
+
+# test retrieve with array ref
+
+is_deeply([$tied->retrieve([qw(a b c)])], [qw(1 2 3)]);
+is_deeply([$obj->retrieve([qw(a b c)])], [qw(1 2 3)]);
+
+# remove with array ref
+$tied->remove([qw(a b c)]);
+$obj->remove([qw(a b c)]);
 
 is(%judy, 0);
 is $obj->count, 0;

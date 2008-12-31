@@ -15,20 +15,22 @@ struct {
 } judySL;
 
 void
-init_buf(judySL * this, const char * key)
+init_buf(judySL * this, const char * key, int keyLen)
 {
-  int sl = strlen(key);
+  if (! keyLen) {
+    keyLen = strlen(key);
+  }
 
-  if (sl >= this->buf_size) {
-    this->buf_size = sl;
+  if (keyLen >= this->buf_size) {
+    this->buf_size = keyLen;
     this->buf = (char *)realloc(this->buf, sizeof(char) * (this->buf_size+1));
     if (this->buf == NULL) {
-      // XXX die
+      croak("out of memory trying to allocate %d bytes", this->buf_size + 1);
     }
-    this->buf[sl] = '\0';
+    this->buf[keyLen] = '\0';
   }
-  strncpy(this->buf, key, sl);
-  this->buf[sl] = '\0';
+  strncpy(this->buf, key, keyLen);
+  this->buf[keyLen] = '\0';
 
   return;
 }
@@ -37,7 +39,7 @@ void
 dec_values(judySL * this) {
   Word_t * pvalue;
 
-  init_buf(this, "");
+  init_buf(this, "", 0);
 
   JSLF(pvalue, this->judy, this->buf);
   while (pvalue != NULL) {
@@ -46,6 +48,58 @@ dec_values(judySL * this) {
   }
 
   return;
+}
+
+SV *
+_judy_JSLG(judySL * this, SV * sv) {
+  Word_t * pvalue;
+  char   * key;
+  STRLEN   keyLen;
+
+  key = (char *)SvPV(sv, keyLen);
+  init_buf(this, key, keyLen);
+  JSLG(pvalue, this->judy, this->buf);
+  if (pvalue == NULL) {
+    return &PL_sv_undef;
+  } else {
+    return sv_2mortal(newSVsv((SV *)*pvalue));
+  }
+}
+
+void
+_judy_JSLI(judySL * this, char * key, I32 keyLen, SV * value) {
+  Word_t * pvalue;
+  init_buf(this, key, keyLen);
+  JSLI(pvalue, this->judy, this->buf);
+  if (pvalue != NULL) {
+    SvREFCNT_inc(value);
+    if (*pvalue == 0) {
+      this->num_keys++;
+    }
+    *pvalue = (Word_t)value;
+  }
+}
+
+SV *
+_judy_JSLD(judySL * this, SV * sv) {
+  Word_t * pvalue;
+  char   * key;
+  STRLEN   pvLen;
+  int	   rc;
+  SV     * ret;
+
+  key = SvPV(sv, pvLen);
+  init_buf(this, key, pvLen);
+  JSLG(pvalue, this->judy, this->buf);
+  if (pvalue == NULL) {
+    ret = &PL_sv_undef;
+  } else {
+    ret = sv_2mortal(newSVsv((SV *)*pvalue));
+    this->num_keys--;
+  }
+
+  JSLD(rc, this->judy, this->buf);
+  return ret;
 }
 
 MODULE = Tie::Judy		PACKAGE = Tie::Judy		
@@ -79,7 +133,7 @@ judy_JSLG(this, key)
 	PREINIT:
 		Word_t     * pvalue;
 	CODE:
-		init_buf(this, key);
+		init_buf(this, key, 0);
 
 		JSLG(pvalue, this->judy, this->buf);
 		if (pvalue == NULL) {
@@ -94,20 +148,31 @@ void
 judy_JSLG_multi(this, ...)
 		judySL * this
 	PREINIT:
-		Word_t * pvalue;
-		int      i;
+		int      i, j, len, elems;
 		STRLEN   n_a;
+		SV     * sv, ** svp;
+		AV     * av;
 	PPCODE:
+		elems = 0;
 		for (i = 1; i < items; i++) {
-		  init_buf(this, (char *)SvPV(ST(i), n_a));
-		  JSLG(pvalue, this->judy, this->buf);
-		  if (pvalue == NULL) {
-		    XPUSHs(&PL_sv_undef);
+		  sv = ST(i);
+		  if (SvROK(sv) && SvTYPE(SvRV(sv)) == SVt_PVAV) {
+		    av = (AV *) SvRV(sv);
+		    len = av_len(av);
+		
+		    for (j = 0; j <= len; j++) {
+		      svp = av_fetch(av, j, 0);
+		      if (svp) {
+		        XPUSHs(_judy_JSLG(this, *svp));
+		        elems++;
+		      }
+		    }
 		  } else {
-		    XPUSHs(sv_2mortal(newSVsv((SV *)*pvalue)));
+		    XPUSHs(_judy_JSLG(this, sv));
+		    elems++;
 		  }
 		}
-		XSRETURN(items - 1);
+		XSRETURN(elems);
 
 void
 judy_JSLI(this, key, value)
@@ -117,7 +182,7 @@ judy_JSLI(this, key, value)
 	PREINIT:
 		Word_t     * pvalue;
 	CODE:
-		init_buf(this, key);
+		init_buf(this, key, 0);
 
 		JSLI(pvalue, this->judy, this->buf);
 		if (pvalue == NULL) {
@@ -137,22 +202,52 @@ void
 judy_JSLI_multi(this, ...)
 		judySL * this
 	PREINIT:
-		Word_t * pvalue;
-		int      i;
-		STRLEN   n_a;
+		int      i, j, len;
+		char   * key;
+		I32      keyLen;
+		SV     * sv, * rv, ** svp, ** valp;
+		HV     * hv;
+		AV     * av;
+		STRLEN   pvLen;
 	CODE:
-		for (i = 1; i < items - 1; i+=2) {
-		  init_buf(this, (char *)SvPV(ST(i), n_a));
-		  JSLI(pvalue, this->judy, this->buf);
-		  if (pvalue != NULL) {
-		    SvREFCNT_inc(ST(i + 1));
-		    if (*pvalue == 0) {
-		      this->num_keys++;
+		for (i = 1; i < items; i+=2) {
+		  sv = ST(i);
+		  if (SvROK(sv)) {
+		    rv = SvRV(sv);
+		    if (SvTYPE(rv) == SVt_PVAV) {
+		      av = (AV *)rv;
+		      len = av_len(av);
+
+		      for (j = 0; j < len; j+=2) {
+			svp = av_fetch(av, j, 0);
+			valp = av_fetch(av, j + 1, 0);
+
+			if (svp && valp) {
+			  key = SvPV(*svp, pvLen);
+
+			  _judy_JSLI(this, key, pvLen, *valp);
+			}
+		      }
+		      i--;
+		    } else if (SvTYPE(rv) == SVt_PVHV) {
+		      hv = (HV *)rv;
+		      len = hv_iterinit(hv);
+		      for (j = 0; j < len; j++) {
+			sv = hv_iternextsv(hv, &key, &keyLen);
+			_judy_JSLI(this, key, keyLen, sv);
+		      }
+		      i--;
+		    } else {
+		      key = SvPV(sv, pvLen);
+		      _judy_JSLI(this, key, pvLen, ST(i + 1));
 		    }
-		    *pvalue = (Word_t)ST(i + 1);
+		  } else if (i < items - 1) {
+		    key = SvPV(sv, pvLen);
+		    _judy_JSLI(this, key, pvLen, ST(i + 1));
+		  } else {
+		    croak("No value for key '%s'\n", SvPV(sv, pvLen));
 		  }
 		}
-
 		XSRETURN_EMPTY;
 
 SV *
@@ -164,7 +259,7 @@ judy_JSLD(this, key)
 		Word_t * pvalue;
 		SV     * value;
 	CODE:
-		init_buf(this, key);
+		init_buf(this, key, 0);
 
 		JSLG(pvalue, this->judy, this->buf);
 		if (pvalue != NULL) {
@@ -186,23 +281,33 @@ void
 judy_JSLD_multi(this, ...)
 		judySL * this
 	PREINIT:
-		Word_t * pvalue;
-		int      i, rc;
-		STRLEN   n_a;
+		int      i, j, len, elems;
+		char   * key;
+		SV     * sv, ** svp;
+		AV     * av;
+		STRLEN   pvLen;
 	PPCODE:
+		elems = 0;
 		for (i = 1; i < items; i++) {
-		  init_buf(this, (char *)SvPV(ST(i), n_a));
-		  JSLG(pvalue, this->judy, this->buf);
-		  if (pvalue == NULL) {
-		    XPUSHs(&PL_sv_undef);
-		  } else {
-		    XPUSHs(sv_2mortal(newSVsv((SV *)*pvalue)));
-		    this->num_keys--;
-		  }
+		  sv = ST(i);
+		  if (SvROK(sv) && SvTYPE(SvRV(sv)) == SVt_PVAV) {
+		    av = (AV *) SvRV(sv);
+		    len = av_len(av);
+		
+		    for (j = 0; j <= len; j++) {
+		      svp = av_fetch(av, j, 0);
+		      if (svp) {
+		        XPUSHs(_judy_JSLD(this, *svp));
+		        elems++;
+		      }
+		    }
 
-		  JSLD(rc, this->judy, this->buf);
+		  } else {
+		    XPUSHs(_judy_JSLD(this, sv));
+		    elems++;
+		  }
 		}
-		XSRETURN(items - 1);
+		XSRETURN(elems);
 
 void
 judy_JSLFA(this)
@@ -229,7 +334,7 @@ judy_JSLF(this)
 	PREINIT:
 		Word_t * pvalue;
 	CODE:
-		init_buf(this, "");
+		init_buf(this, "", 0);
 
 		JSLF(pvalue, this->judy, this->buf);
 		if (pvalue == NULL) {

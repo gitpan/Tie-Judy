@@ -1,10 +1,11 @@
 package Tie::Judy;
 
 use 5.008005;
+use Scalar::Util;
 use strict;
 use warnings;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 require XSLoader;
 XSLoader::load('Tie::Judy', $VERSION);
@@ -52,14 +53,7 @@ sub insert {
   my $this = shift;
 
   my $judy = $$this;
-  if (@_ == 1) {
-    unless (UNIVERSAL::isa($_[0], 'HASH')) {
-      Carp::croak "Usage: \$tied->insert(HASHREF) or \$tied->insert(KEY, VALUE, ...)\n";
-    }
-    judy_JSLI_multi($judy, %{ $_[0] });
-  } else {
-    judy_JSLI_multi($judy, @_);
-  }
+  judy_JSLI_multi($judy, @_);
 
   return;
 }
@@ -96,6 +90,8 @@ sub keys {
 
   my $judy = $$this;
 
+  my $ref = Scalar::Util::refaddr($this);
+
   if (wantarray) {
     my $key = judy_JSLF($judy);
     my @keys;
@@ -104,12 +100,12 @@ sub keys {
       $key = judy_JSLN($judy);
     }
 
-    delete $last_key{$this};
+    delete $last_key{$ref};
     return @keys;
-  } elsif (defined $last_key{$this}) {
-    return $last_key{$this} = judy_JSLN($judy);
+  } elsif (defined $last_key{$ref}) {
+    return $last_key{$ref} = judy_JSLN($judy);
   } else {
-    return $last_key{$this} = judy_JSLF($judy);
+    return $last_key{$ref} = judy_JSLF($judy);
   }
 
   return;
@@ -120,12 +116,14 @@ sub values {
 
   my $judy = $$this;
 
+  my $ref = Scalar::Util::refaddr($this);
+
   if (wantarray) {
     return judy_JSLG_multi($judy, $this->keys);
-  } elsif (defined $last_key{$this}) {
-    return judy_JSLG($judy, $last_key{$this} = judy_JSLN($judy));
+  } elsif (defined $last_key{$ref}) {
+    return judy_JSLG($judy, $last_key{$ref} = judy_JSLN($judy));
   } else {
-    return judy_JSLG($judy, $last_key{$this} = judy_JSLF($judy));
+    return judy_JSLG($judy, $last_key{$ref} = judy_JSLF($judy));
   }
 }
 
