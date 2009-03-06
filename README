@@ -1,8 +1,8 @@
-Tie-Judy version 0.02
+Tie-Judy version 0.05
 =====================
 
-Tie::Judy provides both a tied-hash as well as a traditional object-oriented interface
-for using Judy arrays from Perl programs.
+Tie::Judy provides both a tied-hash as well as a traditional object-oriented
+interface for using Judy arrays from Perl programs.
 
 INSTALLATION
 
@@ -21,9 +21,7 @@ This module requires these other modules and libraries:
 
 COPYRIGHT AND LICENCE
 
-Put the correct copyright and licence information here.
-
-Copyright (C) 2005 by Ben Holzman
+Copyright (C) 2005-2009 by Ben Holzman
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.5 or,

@@ -1,5 +1,15 @@
 Revision history for Perl extension Tie::Judy.
 
+0.05  Fri Mar 07, 2009
+	- added 'search' method to allow flexible range-based
+	  searching and filtering.  Thanks to Brendan [brendan -a t- tucows.com]
+	  for inspiration and design help.
+	- implemented list-context 'keys' and 'values' with 'search'
+	- some refactoring
+
+0.04
+	- Enhancements to insert/retrieve
+
 0.03  Wed Oct 26
 	- added 'clear' synonym to 'CLEAR'
 	- performance enhancements to object-oriented interface

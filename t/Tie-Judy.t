@@ -3,9 +3,7 @@
 
 #########################
 
-# change 'tests => 1' to 'tests => last_test_to_print';
-
-use Test::More tests => 108;
+use Test::More tests => 140;
 use Tie::Hash;
 use Devel::Peek;
 use Time::HiRes;
@@ -13,9 +11,6 @@ use Time::HiRes;
 BEGIN { use_ok('Tie::Judy') };
 
 #########################
-
-# Insert your test code below, the Test::More module is use()ed here so read
-# its man page ( perldoc Test::More ) for help writing this test script.
 
 # do everything with both tied and object interface
 
@@ -237,3 +232,95 @@ $obj->remove([qw(a b c)]);
 
 is(%judy, 0);
 is $obj->count, 0;
+
+# test search method
+$obj->insert ( foo => 4, food => 5, fop => 6 );
+
+# no args, returns all keys
+is_deeply([$obj->search], ['foo', 'food', 'fop']);
+
+# test min_key and max_key independently
+is_deeply([$obj->search(min_key => 'food')], ['food', 'fop']);
+is_deeply([$obj->search(max_key => 'food')], ['foo', 'food']);
+
+# test limit
+is_deeply([$obj->search(limit => 1)], ['foo']);
+
+# test min_key combined with limit, hitting both boundaries
+is_deeply([$obj->search(min_key => 'food', limit => 1)], ['food']);
+is_deeply([$obj->search(min_key => 'food', limit => 2)], ['food', 'fop']);
+is_deeply([$obj->search(min_key => 'fop', limit => 1)], ['fop']);
+is_deeply([$obj->search(min_key => 'fop', limit => 2)], ['fop']);
+is_deeply([$obj->search(min_key => 'foo', limit => 2)], ['foo', 'food']);
+
+# test min_key combined with max_key, hitting both boundaries
+is_deeply([$obj->search(min_key => 'fop', max_key => 'fop')], ['fop']);
+is_deeply([$obj->search(min_key => 'foo', max_key => 'foo')], ['foo']);
+
+# test max_key < min_key results in no matches
+is_deeply([$obj->search(min_key => 'fop', max_key => 'foo')], []);
+
+# test key_re
+is_deeply([$obj->search(key_re => qr{^foo})], ['foo', 'food']);
+
+# test key_re combined with limit
+is_deeply([$obj->search(key_re => qr{^foo}, limit => 1)], ['foo']);
+is_deeply([$obj->search(key_re => qr{d$})], ['food']);
+
+# test key_re that does not match anything
+is_deeply([$obj->search(key_re => qr{x})], []);
+
+# test key_re with a string
+is_deeply([$obj->search(key_re => 'foo')], ['foo', 'food']);
+
+# test value_re
+is_deeply([$obj->search(value_re => qr{[45]})], ['foo', 'food']);
+
+# test value_re combined with limit
+is_deeply([$obj->search(value_re => qr{[45]}, limit => 1)], ['foo']);
+
+# test value_re that does not match anything
+is_deeply([$obj->search(value_re => qr{x})], []);
+
+# test value_re with a string
+is_deeply([$obj->search(value_re => '6')], ['fop']);
+
+# test return modes
+is_deeply([$obj->search( return => 'key' )], [ 'foo', 'food', 'fop' ]);
+is_deeply([$obj->search( return => 'value' )], [ 4, 5, 6 ]);
+is_deeply([$obj->search( return => 'both' )], [ 'foo', 4, 'food', 5, 'fop', 6 ]);
+is_deeply([$obj->search( return => 'ref' )], [ [ 'foo',  4 ],
+					       [ 'food', 5 ],
+					       [ 'fop',  6 ] ]);
+
+# test return mode combined with limit
+is_deeply([$obj->search( return => 'ref', limit => 2 )],
+					 [ [ 'foo', 4 ],
+					   [ 'food', 5 ] ]);
+
+# test return mode combined with limit and min_key
+is_deeply([$obj->search( return => 'ref', limit => 2, min_key => 'food' )],
+					 [ [ 'food', 5 ],
+					   [ 'fop', 6 ] ]);
+
+# test "both" return mode with limit
+is_deeply([$obj->search( return => 'both', limit => 2 )],
+					 [ 'foo', 4, 'food', 5 ]);
+
+# test "both" return mode combined with limit and min_key
+is_deeply([$obj->search( return => 'both', limit => 2, min_key => 'food' )],
+					 [ 'food', 5, 'fop', 6 ]);
+
+# test "check" routine
+is_deeply([$obj->search( check => sub { $_[0] eq 'foo' || $_[1] == 5 } )],
+					 [ 'foo', 'food' ]);
+
+# test "check" routine combined with limit
+is_deeply([$obj->search( limit => 1,
+			 check => sub { $_[0] eq 'foo' || $_[1] == 5 } )],
+					 [ 'foo' ]);
+
+# test "check" routine combined with min_key
+is_deeply([$obj->search( min_key => 'food',
+			 check => sub { $_[0] eq 'foo' || $_[1] == 5 } )],
+					 [ 'food' ]);

@@ -6,6 +6,11 @@
 
 #include "Judy.h"
 
+#define RETURN_MODE_KEY   0
+#define RETURN_MODE_VALUE 1
+#define RETURN_MODE_BOTH  2
+#define RETURN_MODE_REF   3
+
 typedef
 struct {
   Pvoid_t judy;
@@ -15,22 +20,22 @@ struct {
 } judySL;
 
 void
-init_buf(judySL * this, const char * key, int keyLen)
+init_buf(judySL * this, const char * key, int key_len)
 {
-  if (! keyLen) {
-    keyLen = strlen(key);
+  if (! key_len) {
+    key_len = strlen(key);
   }
 
-  if (keyLen >= this->buf_size) {
-    this->buf_size = keyLen;
+  if (key_len >= this->buf_size) {
+    this->buf_size = key_len;
     this->buf = (char *)realloc(this->buf, sizeof(char) * (this->buf_size+1));
     if (this->buf == NULL) {
       croak("out of memory trying to allocate %d bytes", this->buf_size + 1);
     }
-    this->buf[keyLen] = '\0';
+    this->buf[key_len] = '\0';
   }
-  strncpy(this->buf, key, keyLen);
-  this->buf[keyLen] = '\0';
+  strncpy(this->buf, key, key_len);
+  this->buf[key_len] = '\0';
 
   return;
 }
@@ -54,10 +59,10 @@ SV *
 _judy_JSLG(judySL * this, SV * sv) {
   Word_t * pvalue;
   char   * key;
-  STRLEN   keyLen;
+  STRLEN   key_len;
 
-  key = (char *)SvPV(sv, keyLen);
-  init_buf(this, key, keyLen);
+  key = (char *)SvPV(sv, key_len);
+  init_buf(this, key, key_len);
   JSLG(pvalue, this->judy, this->buf);
   if (pvalue == NULL) {
     return &PL_sv_undef;
@@ -67,9 +72,9 @@ _judy_JSLG(judySL * this, SV * sv) {
 }
 
 void
-_judy_JSLI(judySL * this, char * key, I32 keyLen, SV * value) {
+_judy_JSLI(judySL * this, char * key, I32 key_len, SV * value) {
   Word_t * pvalue;
-  init_buf(this, key, keyLen);
+  init_buf(this, key, key_len);
   JSLI(pvalue, this->judy, this->buf);
   if (pvalue != NULL) {
     SvREFCNT_inc(value);
@@ -100,6 +105,31 @@ _judy_JSLD(judySL * this, SV * sv) {
 
   JSLD(rc, this->judy, this->buf);
   return ret;
+}
+
+REGEXP *
+get_regexp(SV * sv)
+{
+#ifdef SvRX
+  return SvRX(sv);
+#else
+  SV * tmpsv;
+  MAGIC * mg;
+
+  if (sv) {
+    if (SvMAGICAL(sv)) {
+      mg_get(sv);
+    }
+    if (SvROK(sv) &&
+	(tmpsv = (SV *)SvRV(sv)) &&
+	SvTYPE(tmpsv) == SVt_PVMG &&
+	(mg = mg_find(tmpsv, PERL_MAGIC_qr))) {
+      return (REGEXP *)mg->mg_obj;
+    }
+  }
+
+  return NULL;
+#endif
 }
 
 MODULE = Tie::Judy		PACKAGE = Tie::Judy		
@@ -204,7 +234,7 @@ judy_JSLI_multi(this, ...)
 	PREINIT:
 		int      i, j, len;
 		char   * key;
-		I32      keyLen;
+		I32      key_len;
 		SV     * sv, * rv, ** svp, ** valp;
 		HV     * hv;
 		AV     * av;
@@ -233,8 +263,8 @@ judy_JSLI_multi(this, ...)
 		      hv = (HV *)rv;
 		      len = hv_iterinit(hv);
 		      for (j = 0; j < len; j++) {
-			sv = hv_iternextsv(hv, &key, &keyLen);
-			_judy_JSLI(this, key, keyLen, sv);
+			sv = hv_iternextsv(hv, &key, &key_len);
+			_judy_JSLI(this, key, key_len, sv);
 		      }
 		      i--;
 		    } else {
@@ -367,3 +397,122 @@ judy_count(this)
 		RETVAL = this->num_keys;
 	OUTPUT:
 		RETVAL
+
+void
+judy_search(this, min_key, max_key, limit, key_re, val_re, check, return_mode)
+		judySL * this
+		char * min_key
+		char * max_key
+		int limit
+		SV * key_re
+		SV * val_re
+		SV * check
+		int return_mode
+	PREINIT:
+		Word_t * pvalue;
+		AV * av;
+		REGEXP * key_regexp, * val_regexp;
+		int elems = 0;
+		int key_len, add_it, run_check = 0, ret;
+		char * value;
+		STRLEN len;
+	PPCODE:
+		init_buf(this, min_key, 0);
+
+		key_regexp = get_regexp(key_re);
+		val_regexp = get_regexp(val_re);
+
+		if (return_mode == RETURN_MODE_BOTH) {
+		  limit *= 2;
+		}
+
+		if (SvROK(check) && SvTYPE(SvRV(check)) == SVt_PVCV) {
+		  run_check = 1;
+		}
+
+		JSLF(pvalue, this->judy, this->buf);
+		while (limit == 0 || elems < limit) {
+		  if (pvalue == NULL) {
+		    XSRETURN(elems);
+		  } else {
+		    if (max_key[0] != '\0' &&
+			strcmp(this->buf, max_key) > 0) {
+		      XSRETURN(elems);
+		    }
+
+		    key_len = strlen(this->buf);
+		    add_it = 1;
+
+		    if (key_regexp) {
+		      if (pregexec(key_regexp, this->buf, this->buf + key_len, this->buf, 0, &PL_sv_undef, 1)) {
+			add_it = 1;
+		      } else {
+			add_it = 0;
+		      }
+		    }
+
+		    if (val_regexp) {
+		      value = SvPV((SV *)*pvalue, len);
+		      if (pregexec(val_regexp, value, value + len, value, 0, &PL_sv_undef, 1)) {
+			add_it = 1;
+		      } else {
+			add_it = 0;
+		      }
+		    }
+
+		    if (run_check && add_it) {
+		      ENTER;
+		      SAVETMPS;
+
+		      PUSHMARK(SP);
+		      XPUSHs(sv_2mortal(newSVpvn(this->buf, key_len)));
+		      XPUSHs((SV *)*pvalue);
+		      PUTBACK;
+
+		      ret = call_sv(check, G_SCALAR);
+
+		      SPAGAIN;
+
+		      if (ret != 1)
+			  croak("No return from coderef!?");
+
+		      if (! POPi) {
+			add_it = 0;
+		      }
+
+		      PUTBACK;
+		      FREETMPS;
+		      LEAVE;
+		    }
+
+		    if (add_it) {
+		      elems++;
+		      switch (return_mode) {
+			case RETURN_MODE_VALUE:
+			  XPUSHs(sv_2mortal(newSVsv((SV *)*pvalue)));
+			  break;
+
+			case RETURN_MODE_BOTH:
+			  XPUSHs(sv_2mortal(newSVpvn(this->buf, key_len)));
+			  XPUSHs(sv_2mortal(newSVsv((SV *)*pvalue)));
+			  elems++;
+			  break;
+
+			case RETURN_MODE_REF:
+			  av = newAV();
+			  av_push(av, sv_2mortal(newSVpvn(this->buf, key_len)));
+			  av_push(av, sv_2mortal(newSVsv((SV *)*pvalue)));
+			  XPUSHs(sv_2mortal(newRV_inc((SV *)av)));
+			  break;
+
+			case RETURN_MODE_KEY:
+			default:
+			  XPUSHs(sv_2mortal(newSVpvn(this->buf, key_len)));
+			  break;
+		      }
+		    }
+		  }
+		  JSLN(pvalue, this->judy, this->buf);
+	        }
+
+		XSRETURN(elems);

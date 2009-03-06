@@ -5,7 +5,7 @@ use Scalar::Util;
 use strict;
 use warnings;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 require XSLoader;
 XSLoader::load('Tie::Judy', $VERSION);
@@ -93,15 +93,8 @@ sub keys {
   my $ref = Scalar::Util::refaddr($this);
 
   if (wantarray) {
-    my $key = judy_JSLF($judy);
-    my @keys;
-    while (defined $key) {
-      push @keys, $key;
-      $key = judy_JSLN($judy);
-    }
-
     delete $last_key{$ref};
-    return @keys;
+    return $this->search();
   } elsif (defined $last_key{$ref}) {
     return $last_key{$ref} = judy_JSLN($judy);
   } else {
@@ -119,12 +112,57 @@ sub values {
   my $ref = Scalar::Util::refaddr($this);
 
   if (wantarray) {
-    return judy_JSLG_multi($judy, $this->keys);
+    delete $last_key{$ref};
+    return $this->search( return => 'value' );
   } elsif (defined $last_key{$ref}) {
     return judy_JSLG($judy, $last_key{$ref} = judy_JSLN($judy));
   } else {
     return judy_JSLG($judy, $last_key{$ref} = judy_JSLF($judy));
   }
+}
+
+my %return_modes = (
+  'key' => 0,
+  'keys' => 0,
+  'value' => 1,
+  'values' => 1,
+  'both' => 2,
+  'ref' => 3,
+  'refs' => 3,
+);
+
+sub search {
+  my($this, %params) = @_;
+
+  my $return_mode = 0;
+  if (exists $params{'return'} &&
+      exists $return_modes{$params{'return'}}) {
+    $return_mode = $return_modes{$params{'return'}};
+  }
+
+  if (exists $params{'key_re'} &&
+      ref($params{'key_re'}) ne 'Regexp') {
+    $params{'key_re'} = qr{$params{'key_re'}};
+  }
+
+  if (exists $params{'value_re'} &&
+      ref($params{'value_re'}) ne 'Regexp') {
+    $params{'value_re'} = qr{$params{'value_re'}};
+  }
+
+  if (exists $params{'check'} &&
+      ref($params{'check'}) ne 'CODE') {
+    require Carp;
+    Carp::croak("Tie::Judy::search: 'check' argument must be a coderef");
+  }
+
+  return judy_search($$this, $params{'min_key'}  || "",
+			     $params{'max_key'}  || "",
+			     $params{'limit'}    || 0,
+			     $params{'key_re'}   || "",
+			     $params{'value_re'} || "",
+			     $params{'check'}    || "",
+			     $return_mode);
 }
 
 sub CLEAR {
@@ -186,6 +224,33 @@ Tie::Judy - Perl extension for using a Judy array instead of a hash.
   # method to remove lots of entries at once
   (tied %judy)->remove( 'key1', 'key2', ... );
 
+  # search: flexible method to retrieve a subset of keys and/or values
+
+  #   with no arguments, returns all the keys
+  (tied %judy)->search();
+  (tied %judy)->search( return => 'key' ); # same thing
+
+  #   can instead return values
+  (tied %judy)->search( return => 'value' );
+
+  #   or both keys and values (as a flat list)
+  (tied %judy)->search( return => 'both' );
+
+  #   or a list of array references (each with one key and one value)
+  (tied %judy)->search( return => 'ref' );
+
+  #   the set of entries can be filtered thusly:
+  #     (note that none of these arguments are required)
+  (tied %judy)->search( min_key  => 'from',
+                        max_key  => 'to',
+                        limit    => 100,      # max number of entries returned
+                        key_re   => qr{.{3}}, # the key must match this pattern
+                        value_re => qr{.{9}}, # value must match this pattern
+			check    => \&check,  # sub gets key and value in @_,
+					      # should return true if entry
+					      # should be included
+		      ); 
+
   # OBJECT-ORIENTED INTERFACE
   my $judy = Tie::Judy->new();
 
@@ -206,6 +271,9 @@ Tie::Judy - Perl extension for using a Judy array instead of a hash.
   # remove all entries
   $judy->clear;
 
+  # as above
+  $judy->search( ... );
+
 =head1 DESCRIPTION
 
 =head2 EXPORT
@@ -222,7 +290,7 @@ Benjamin Holzman, E<lt>bholzman@earthlink.net<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2005 by Benjamin Holzman
+Copyright (C) 2005-2009 by Benjamin Holzman
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.5 or,
